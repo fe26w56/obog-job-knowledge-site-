@@ -15,18 +15,10 @@ export async function GET(request: Request) {
 
     const supabase = createServerClient()
 
-    // クエリ構築
+    // クエリ構築 - まずはシンプルに投稿データのみ取得
     let query = supabase
       .from('posts')
-      .select(`
-        *,
-        profiles:author_id (
-          display_name,
-          avatar_url,
-          university,
-          company
-        )
-      `)
+      .select('*')
       .eq('status', 'published')
 
     // フィルタ条件
@@ -138,15 +130,7 @@ export async function POST(request: Request) {
         status: status || 'published',
         published_at: status === 'published' ? new Date().toISOString() : null
       })
-      .select(`
-        *,
-        profiles:author_id (
-          display_name,
-          avatar_url,
-          university,
-          company
-        )
-      `)
+      .select('*')
       .single()
 
     if (error) {

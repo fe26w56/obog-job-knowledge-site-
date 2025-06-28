@@ -12,10 +12,10 @@
 :root {
   /* Primary Colors */
   --color-primary-50: #eff6ff;
-  --color-primary-100: #dbeafe;
-  --color-primary-500: #3b82f6;
-  --color-primary-600: #2563eb;
-  --color-primary-700: #1d4ed8;
+  --color-primary-100: #e9529333;
+  --color-primary-500: #e952937d;
+  --color-primary-600: #e95293cc;
+  --color-primary-700: #e95294;
   
   /* Secondary Colors */
   --color-secondary-50: #f0fdf4;

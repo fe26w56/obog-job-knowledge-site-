@@ -8,50 +8,40 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    const { id } = params
+    const postId = params.id
+
+    if (!postId) {
+      return NextResponse.json(
+        { status: 'error', message: '投稿IDが指定されていません' },
+        { status: 400 }
+      )
+    }
+
     const supabase = createServerClient()
 
+    // 投稿詳細を取得
     const { data, error } = await supabase
       .from('posts')
-      .select(`
-        *,
-        profiles:author_id (
-          id,
-          display_name,
-          avatar_url,
-          university,
-          graduation_year,
-          company,
-          position
-        ),
-        comments (
-          id,
-          content,
-          like_count,
-          status,
-          created_at,
-          profiles:author_id (
-            display_name,
-            avatar_url
-          )
-        )
-      `)
-      .eq('id', id)
+      .select('*')
+      .eq('id', postId)
+      .eq('status', 'published')
       .single()
 
     if (error) {
       console.error('投稿取得エラー:', error)
+      
+      if (error.code === 'PGRST116') {
+        return NextResponse.json(
+          { status: 'error', message: '投稿が見つかりません' },
+          { status: 404 }
+        )
+      }
+      
       return NextResponse.json(
-        { status: 'error', message: '投稿が見つかりません' },
-        { status: 404 }
+        { status: 'error', message: '投稿の取得に失敗しました' },
+        { status: 500 }
       )
     }
-
-    // 閲覧数を1増やす
-    await supabase
-      .from('posts')
-      .update({ view_count: (data.view_count || 0) + 1 })
-      .eq('id', id)
 
     return NextResponse.json({
       status: 'success',
@@ -73,9 +63,16 @@ export async function PUT(
   { params }: { params: { id: string } }
 ) {
   try {
-    const { id } = params
+    const postId = params.id
     const body = await request.json()
     const { title, content, category, tags, status } = body
+
+    if (!postId) {
+      return NextResponse.json(
+        { status: 'error', message: '投稿IDが指定されていません' },
+        { status: 400 }
+      )
+    }
 
     // バリデーション
     if (!title || !content || !category) {
@@ -117,54 +114,21 @@ export async function PUT(
 
     const supabase = createServerClient()
 
-    // 投稿の存在と権限チェック
-    const { data: existingPost, error: fetchError } = await supabase
-      .from('posts')
-      .select('author_id')
-      .eq('id', id)
-      .single()
-
-    if (fetchError || !existingPost) {
-      return NextResponse.json(
-        { status: 'error', message: '投稿が見つかりません' },
-        { status: 404 }
-      )
-    }
-
-    // TODO: ユーザーIDの検証（現在はスキップ）
-
-    // 投稿更新
-    const updateData: any = {
-      title,
-      content,
-      excerpt: content.slice(0, 200) + (content.length > 200 ? '...' : ''),
-      category,
-      tags: tags || [],
-      updated_at: new Date().toISOString()
-    }
-
-    // ステータスが公開に変更された場合、公開日を設定
-    if (status === 'published' && existingPost.status !== 'published') {
-      updateData.published_at = new Date().toISOString()
-    }
-
-    if (status) {
-      updateData.status = status
-    }
-
+    // 投稿を更新
     const { data, error } = await supabase
       .from('posts')
-      .update(updateData)
-      .eq('id', id)
-      .select(`
-        *,
-        profiles:author_id (
-          display_name,
-          avatar_url,
-          university,
-          company
-        )
-      `)
+      .update({
+        title,
+        content,
+        excerpt: content.slice(0, 200) + (content.length > 200 ? '...' : ''),
+        category,
+        tags: tags || [],
+        status: status || 'published',
+        updated_at: new Date().toISOString(),
+        published_at: status === 'published' ? new Date().toISOString() : null
+      })
+      .eq('id', postId)
+      .select('*')
       .single()
 
     if (error) {
@@ -196,7 +160,14 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    const { id } = params
+    const postId = params.id
+
+    if (!postId) {
+      return NextResponse.json(
+        { status: 'error', message: '投稿IDが指定されていません' },
+        { status: 400 }
+      )
+    }
 
     // 認証チェック（後で実装）
     const authHeader = request.headers.get('authorization')
@@ -209,30 +180,16 @@ export async function DELETE(
 
     const supabase = createServerClient()
 
-    // 投稿の存在と権限チェック
-    const { data: existingPost, error: fetchError } = await supabase
+    // 投稿を削除（論理削除）
+    const { data, error } = await supabase
       .from('posts')
-      .select('author_id, title')
-      .eq('id', id)
-      .single()
-
-    if (fetchError || !existingPost) {
-      return NextResponse.json(
-        { status: 'error', message: '投稿が見つかりません' },
-        { status: 404 }
-      )
-    }
-
-    // TODO: ユーザーIDの検証（現在はスキップ）
-
-    // 論理削除：ステータスを'archived'に変更
-    const { error } = await supabase
-      .from('posts')
-      .update({ 
+      .update({
         status: 'archived',
         updated_at: new Date().toISOString()
       })
-      .eq('id', id)
+      .eq('id', postId)
+      .select('*')
+      .single()
 
     if (error) {
       console.error('投稿削除エラー:', error)
@@ -244,6 +201,7 @@ export async function DELETE(
 
     return NextResponse.json({
       status: 'success',
+      data: { post: data },
       message: '投稿が削除されました'
     })
 

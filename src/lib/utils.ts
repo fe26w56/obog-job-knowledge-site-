@@ -42,6 +42,26 @@ export function formatRelativeTime(date: string | Date): string {
   }
 }
 
+// formatTimeAgoのエイリアス（PostCardで使用）
+export const formatTimeAgo = formatRelativeTime
+
+// 日本時間フォーマット関数
+export function formatDateToJST(date: string | Date, options?: Intl.DateTimeFormatOptions): string {
+  const dateObj = typeof date === 'string' ? new Date(date) : date
+  
+  const defaultOptions: Intl.DateTimeFormatOptions = {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'Asia/Tokyo',
+    ...options,
+  }
+  
+  return new Intl.DateTimeFormat('ja-JP', defaultOptions).format(dateObj)
+}
+
 // テキスト切り詰め関数
 export function truncateText(text: string, maxLength: number): string {
   if (text.length <= maxLength) {
@@ -121,6 +141,22 @@ export function getCategoryDisplayName(category: string): string {
     skill_development: 'スキル開発',
     networking: 'ネットワーキング',
     general: '一般',
+    job_hunting: '就活全般',
+    interview: '面接対策',
+    es_writing: 'ES・履歴書',
+    industry_research: '業界研究',
+    company_research: '企業研究',
+    internship: 'インターン',
+    skills: 'スキル・資格',
+    career_change: '転職',
+    freelance: 'フリーランス',
+    startup: 'スタートアップ',
+    consulting: 'コンサル',
+    finance: '金融',
+    tech: 'IT・技術',
+    marketing: 'マーケティング',
+    sales: '営業',
+    other: 'その他'
   }
   
   return categoryNames[category] || category

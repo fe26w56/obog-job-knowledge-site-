@@ -8,7 +8,9 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { PostCategory, PostStatus, PostFormData, Post } from '@/types'
 import { createPost, updatePost } from '@/lib/api-client'
-import { Eye, EyeOff, Save, Send, X, Plus } from 'lucide-react'
+import { Save, Send, X, Plus } from 'lucide-react'
+import MarkdownEditor from '@/components/forms/MarkdownEditor'
+import FileUpload from '@/components/forms/FileUpload'
 
 // バリデーションスキーマ
 const postSchema = z.object({
@@ -43,9 +45,10 @@ const categoryOptions: { value: PostCategory; label: string; description: string
 ]
 
 export default function PostForm({ post, onSuccess, onCancel }: PostFormProps) {
-  const [isPreview, setIsPreview] = useState(false)
   const [tagInput, setTagInput] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [uploadedFiles, setUploadedFiles] = useState<any[]>([])
+  const [isUploading, setIsUploading] = useState(false)
 
   const {
     register,
@@ -92,6 +95,74 @@ export default function PostForm({ post, onSuccess, onCancel }: PostFormProps) {
     }
   }
 
+  // ファイルアップロード処理
+  const handleFileUpload = async (files: File[]) => {
+    if (files.length === 0) return
+
+    try {
+      setIsUploading(true)
+      const formData = new FormData()
+      
+      files.forEach(file => {
+        formData.append('files', file)
+      })
+
+      const response = await fetch('/api/upload', {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer dummy-token' // TODO: 実際のトークンに置き換え
+        },
+        body: formData
+      })
+
+      const result = await response.json()
+
+      if (result.status === 'success' || result.status === 'partial_success') {
+        setUploadedFiles(prev => [...prev, ...result.data.files])
+        
+        // マークダウンエディタに画像URLを挿入
+        const imageFiles = result.data.files.filter((file: any) => file.type.startsWith('image/'))
+        if (imageFiles.length > 0) {
+          const currentContent = watchedValues.content || ''
+          const imageMarkdown = imageFiles.map((file: any) => 
+            `![${file.name}](${file.url})`
+          ).join('\n\n')
+          
+          setValue('content', currentContent + '\n\n' + imageMarkdown, { shouldDirty: true })
+        }
+      }
+
+      if (result.errors && result.errors.length > 0) {
+        console.error('アップロードエラー:', result.errors)
+        // TODO: エラー通知を表示
+      }
+
+    } catch (error) {
+      console.error('ファイルアップロードエラー:', error)
+      // TODO: エラー通知を表示
+    } finally {
+      setIsUploading(false)
+    }
+  }
+
+  // ファイル削除処理
+  const handleFileRemove = async (fileId: string) => {
+    try {
+      const response = await fetch(`/api/upload?path=${encodeURIComponent(fileId)}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': 'Bearer dummy-token' // TODO: 実際のトークンに置き換え
+        }
+      })
+
+      if (response.ok) {
+        setUploadedFiles(prev => prev.filter(file => file.id !== fileId))
+      }
+    } catch (error) {
+      console.error('ファイル削除エラー:', error)
+    }
+  }
+
   // フォーム送信
   const onSubmit = async (data: PostFormValues) => {
     try {
@@ -131,19 +202,6 @@ export default function PostForm({ post, onSuccess, onCancel }: PostFormProps) {
     handleSubmit(onSubmit)()
   }
 
-  // マークダウンプレビュー（簡易版）
-  const renderPreview = (content: string) => {
-    // 簡易的なマークダウン変換
-    return content
-      .replace(/^### (.*$)/gim, '<h3 class="text-lg font-semibold mt-4 mb-2">$1</h3>')
-      .replace(/^## (.*$)/gim, '<h2 class="text-xl font-semibold mt-6 mb-3">$1</h2>')
-      .replace(/^# (.*$)/gim, '<h1 class="text-2xl font-bold mt-8 mb-4">$1</h1>')
-      .replace(/\*\*(.*)\*\*/gim, '<strong class="font-semibold">$1</strong>')
-      .replace(/\*(.*)\*/gim, '<em class="italic">$1</em>')
-      .replace(/`([^`]+)`/gim, '<code class="bg-gray-100 px-1 py-0.5 rounded text-sm">$1</code>')
-      .replace(/\n/gim, '<br>')
-  }
-
   return (
     <div className="max-w-4xl mx-auto p-6">
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
@@ -152,18 +210,6 @@ export default function PostForm({ post, onSuccess, onCancel }: PostFormProps) {
           <h1 className="text-2xl font-bold text-gray-900">
             {post ? '投稿を編集' : '新しい投稿を作成'}
           </h1>
-          <div className="flex items-center space-x-3">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setIsPreview(!isPreview)}
-              className="flex items-center space-x-2"
-            >
-              {isPreview ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              <span>{isPreview ? 'エディタ' : 'プレビュー'}</span>
-            </Button>
-          </div>
         </div>
 
         {/* タイトル */}
@@ -247,24 +293,40 @@ export default function PostForm({ post, onSuccess, onCancel }: PostFormProps) {
           )}
         </div>
 
-        {/* コンテンツエリア */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* エディタ */}
-          {!isPreview && (
-            <div className="lg:col-span-2">
-              <label htmlFor="content" className="block text-sm font-medium text-gray-700 mb-2">
-                内容 <span className="text-red-500">*</span>
-                <span className="text-gray-500 text-xs ml-2">
-                  (Markdown記法が使用できます)
-                </span>
-              </label>
-              <textarea
-                id="content"
-                {...register('content')}
-                rows={16}
+        {/* ファイルアップロード */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            ファイル添付
+          </label>
+          <FileUpload
+            onFileSelect={handleFileUpload}
+            onFileRemove={handleFileRemove}
+            uploadedFiles={uploadedFiles}
+            disabled={isSubmitting || isUploading}
+            acceptedTypes={['image/*', '.pdf', '.doc', '.docx']}
+            maxFileSize={5}
+            maxFiles={5}
+          />
+          {isUploading && (
+            <p className="text-sm text-blue-600 mt-2">ファイルをアップロード中...</p>
+          )}
+        </div>
+
+        {/* マークダウンエディタ */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            内容 <span className="text-red-500">*</span>
+          </label>
+          <Controller
+            name="content"
+            control={control}
+            render={({ field }) => (
+              <MarkdownEditor
+                value={field.value}
+                onChange={field.onChange}
                 placeholder="## 見出し
-                
-**太字** や *斜体* を使って、体験談や Tips を書いてください。
+
+**太字** や *斜体* を使って、体験談やTipsを書いてください。
 
 ```
 コードブロックも使用できます
@@ -273,31 +335,16 @@ export default function PostForm({ post, onSuccess, onCancel }: PostFormProps) {
 - リスト項目1
 - リスト項目2
 
-[リンク](https://example.com) も追加できます。"
-                className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 font-mono text-sm"
-              />
-              {errors.content && (
-                <p className="text-red-500 text-sm mt-1">{errors.content.message}</p>
-              )}
-              <div className="text-right text-sm text-gray-500 mt-1">
-                {watchedValues.content?.length || 0} / 10,000 文字
-              </div>
-            </div>
-          )}
+[リンク](https://example.com) も追加できます。
 
-          {/* プレビュー */}
-          {isPreview && (
-            <div className="lg:col-span-2">
-              <h3 className="text-sm font-medium text-gray-700 mb-2">プレビュー</h3>
-              <div className="border border-gray-300 rounded-md p-4 bg-white min-h-[400px]">
-                <div 
-                  className="prose prose-sm max-w-none"
-                  dangerouslySetInnerHTML={{ 
-                    __html: renderPreview(watchedValues.content || '') 
-                  }}
-                />
-              </div>
-            </div>
+画像はファイルアップロード機能を使用して挿入できます。"
+                height={500}
+                disabled={isSubmitting}
+              />
+            )}
+          />
+          {errors.content && (
+            <p className="text-red-500 text-sm mt-1">{errors.content.message}</p>
           )}
         </div>
 
@@ -316,7 +363,7 @@ export default function PostForm({ post, onSuccess, onCancel }: PostFormProps) {
               type="button"
               variant="outline"
               onClick={saveDraft}
-              disabled={isSubmitting}
+              disabled={isSubmitting || isUploading}
               className="flex items-center space-x-2"
             >
               <Save className="w-4 h-4" />
@@ -326,7 +373,7 @@ export default function PostForm({ post, onSuccess, onCancel }: PostFormProps) {
             <Button
               type="button"
               onClick={publish}
-              disabled={isSubmitting}
+              disabled={isSubmitting || isUploading}
               className="flex items-center space-x-2"
             >
               <Send className="w-4 h-4" />
